@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.tmp/
+pytest-cache-files-*/
+.mypy_cache/
+*.pyc
+reports/
+vector_store.json
+*.egg-info/

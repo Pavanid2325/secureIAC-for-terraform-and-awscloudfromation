@@ -1,0 +1,17 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "RDS instance without storage encryption.",
+  "Resources": {
+    "Database": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "Engine": "postgres",
+        "DBInstanceClass": "db.t3.micro",
+        "AllocatedStorage": "20",
+        "StorageEncrypted": false,
+        "PubliclyAccessible": true,
+        "MasterUsername": "admin"
+      }
+    }
+  }
+}
