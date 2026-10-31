@@ -129,6 +129,13 @@ class VulnerabilityFinding:
     remediation: Remediation
     confidence: float
     related_resources: list[str] = field(default_factory=list)
+    property_path: str = ""
+    observed_value_json: str = "null"
+    missing: bool = False
+    status: str = "contextual_concern"
+    uncertainty: list[str] = field(default_factory=list)
+    provenance: str = "llm"
+    source_location: int | None = None
 
 
 @dataclass(frozen=True)

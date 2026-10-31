@@ -42,6 +42,7 @@ def analysis_json(template_name="<memory>", resource="Sg", resource_type="AWS::E
     sources = [source] if source else []
     return json.dumps(
         {
+            "schema_version": "2",
             "template_name": template_name,
             "resources_analyzed": 1,
             "findings": [
@@ -64,6 +65,11 @@ def analysis_json(template_name="<memory>", resource="Sg", resource_type="AWS::E
                     },
                     "confidence": 0.98,
                     "related_resources": [],
+                    "property_path": "/Properties/SecurityGroupIngress/0/CidrIp",
+                    "observed_value_json": "\"0.0.0.0/0\"",
+                    "missing": False,
+                    "status": "contextual_concern",
+                    "uncertainty": [],
                 }
             ],
             "summary": "One high-severity finding.",
@@ -104,7 +110,7 @@ def test_bedrock_client_builds_anthropic_request():
 
     runtime = Runtime()
     client = BedrockClaudeClient("us-east-1", "profile/model", client=runtime, temperature=0.2)
-    assert client.generate("system", "user") == "{}"
+    assert client.generate("system", "user").text == "{}"
     body = json.loads(runtime.kwargs["body"])
     assert runtime.kwargs["modelId"] == "profile/model"
     assert body["system"] == "system"
@@ -150,7 +156,7 @@ def test_detection_agent_retries_malformed_output_and_preserves_citation():
 
 
 def test_detection_agent_handles_empty_findings():
-    response = json.dumps({"template_name": "<memory>", "resources_analyzed": 1, "findings": [], "summary": "No findings."})
+    response = json.dumps({"schema_version": "2", "template_name": "<memory>", "resources_analyzed": 1, "findings": [], "summary": "No findings."})
     parsed = parsed_sg()
     result = VulnerabilityDetectionAgent(FakeLLM([response])).analyze(parsed, normalize_template(parsed), [])
     assert result.findings == []
@@ -158,7 +164,7 @@ def test_detection_agent_handles_empty_findings():
 
 def test_report_formats_only_validated_findings():
     source = citation_id("chunk-1", "kb/security.md")
-    analysis = parse_analysis_response(analysis_json(source=source), "<memory>", {"Sg": "AWS::EC2::SecurityGroup"}, {source})
+    analysis = parse_analysis_response(analysis_json(source=source), "<memory>", {"Sg": "AWS::EC2::SecurityGroup"}, {source}, parsed_sg().raw)
     report = ReportGenerationAgent().generate(analysis, normalize_template(parsed_sg()))
     assert "### [HIGH] Unrestricted SSH ingress" in report
     assert source in report
@@ -171,7 +177,7 @@ def test_multiple_findings_are_validated_and_reported():
     second["finding_id"] = "F-002"
     second["title"] = "Second finding"
     payload["findings"].append(second)
-    analysis = parse_analysis_response(json.dumps(payload), "<memory>", {"Sg": "AWS::EC2::SecurityGroup"}, set())
+    analysis = parse_analysis_response(json.dumps(payload), "<memory>", {"Sg": "AWS::EC2::SecurityGroup"}, set(), parsed_sg().raw)
     report = ReportGenerationAgent().generate(analysis, normalize_template(parsed_sg()))
     assert len(analysis.findings) == 2
     assert "Total findings: 2" in report
@@ -202,13 +208,15 @@ def test_example_templates_accept_correct_mocked_findings(path, resource, resour
     parsed = CloudFormationParser().parse_file(path)
     payload = json.loads(analysis_json(parsed.path, resource, resource_type))
     payload["findings"][0]["title"] = title
+    key, value = next(iter(parsed.raw["Resources"][resource]["Properties"].items()))
+    payload["findings"][0].update(property_path="/Properties/" + key, observed_value_json=json.dumps(value), status="insufficient_information")
     result = VulnerabilityDetectionAgent(FakeLLM([json.dumps(payload)])).analyze(parsed, normalize_template(parsed), [])
     assert result.findings[0].resource_logical_id == resource
 
 
 def test_secure_example_accepts_empty_findings():
     parsed = CloudFormationParser().parse_file("examples/secure/secure_baseline.yaml")
-    response = json.dumps({"template_name": parsed.path, "resources_analyzed": len(parsed.resources), "findings": [], "summary": "No validated findings."})
+    response = json.dumps({"schema_version": "2", "template_name": parsed.path, "resources_analyzed": len(parsed.resources), "findings": [], "summary": "No validated findings."})
     result = VulnerabilityDetectionAgent(FakeLLM([response])).analyze(parsed, normalize_template(parsed), [])
     assert result.findings == []
 
@@ -223,11 +231,12 @@ def test_cli_analyze_command_with_mocked_claude(monkeypatch, tmp_path, capsys):
         def generate(self, system_prompt, user_prompt):
             name = json.loads(re.search(r'"template_name":("(?:[^"\\]|\\.)*")', user_prompt).group(1))
             count = int(re.search(r'"resources_analyzed":(\d+)', user_prompt).group(1))
-            return json.dumps({"template_name": name, "resources_analyzed": count, "findings": [], "summary": "No findings."})
+            return json.dumps({"schema_version": "2", "template_name": name, "resources_analyzed": count, "findings": [], "summary": "No findings."})
 
-    monkeypatch.setattr("src.cli.BedrockClaudeClient", PromptAwareLLM)
+    monkeypatch.setattr("src.cli.create_provider", lambda settings: PromptAwareLLM())
     monkeypatch.setenv("REPORTS_PATH", str(tmp_path / "reports"))
     monkeypatch.setenv("LOCAL_VECTOR_STORE_PATH", str(tmp_path / "vectors.json"))
+    monkeypatch.setenv("EMBEDDING_BACKEND", "hash")
     code = main(["analyze", "examples/secure/secure_baseline.yaml", "--local-embeddings"])
     assert code == 0
     assert "Analysis complete" in capsys.readouterr().out

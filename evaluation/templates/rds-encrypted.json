@@ -1,0 +1,1 @@
+{"Resources":{"Database":{"Type":"AWS::RDS::DBInstance","Properties":{"Engine":"postgres","StorageEncrypted":true,"PubliclyAccessible":false,"Tags":[{"Key":"Owner","Value":"Security"}]}}}}

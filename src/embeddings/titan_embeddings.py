@@ -10,13 +10,7 @@ import random
 import time
 from typing import Protocol
 
-try:
-    import boto3
-    from botocore.exceptions import BotoCoreError, ClientError
-except ImportError:  # pragma: no cover - exercised only in minimal environments
-    boto3 = None
-    BotoCoreError = Exception
-    ClientError = Exception
+# AWS is imported only when a Titan client is explicitly constructed.
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +35,9 @@ class TitanEmbeddingClient:
         max_retries: int = 3,
         client: object | None = None,
     ) -> None:
+        global BotoCoreError, ClientError
+        import boto3
+        from botocore.exceptions import BotoCoreError, ClientError
         self.model_id = model_id
         self.max_retries = max_retries
         if client is None and boto3 is None:
@@ -83,6 +80,7 @@ class LocalHashEmbeddingClient:
 
     def __init__(self, dimensions: int = 64) -> None:
         self.dimensions = dimensions
+        self.model_id = "hash-demo-v1"
 
     def embed_text(self, text: str) -> list[float]:
         if not text.strip():

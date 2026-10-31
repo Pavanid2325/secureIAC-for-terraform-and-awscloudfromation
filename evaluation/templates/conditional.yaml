@@ -1,0 +1,9 @@
+Parameters:
+  Encrypt: {Type: String}
+Conditions:
+  UseEncryption: !Equals [!Ref Encrypt, 'true']
+Resources:
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      StorageEncrypted: !If [UseEncryption, true, false]

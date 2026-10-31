@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "description": "Generated starter labels pending human review; not published experimental results.",
+  "cases": [
+    {"id":"ssh-open","group":"ssh","split":"test","template":"examples/vulnerable/open_ssh.yaml","label_status":"pending_human_review","expected":{"full":[["WebSecurityGroup","ORG-ADMIN-CIDR"]]}},
+    {"id":"rds-unencrypted","group":"rds","split":"test","template":"examples/vulnerable/rds_unencrypted.json","label_status":"pending_human_review","expected":{"full":[["Database","ORG-RDS-ENCRYPTION"]]}},
+    {"id":"rds-encrypted","group":"rds","split":"test","template":"evaluation/templates/rds-encrypted.json","label_status":"pending_human_review","expected":{}},
+    {"id":"baseline","group":"baseline","split":"test","template":"examples/secure/secure_baseline.yaml","label_status":"pending_human_review","expected":{}},
+    {"id":"conditional","group":"rds","split":"test","template":"evaluation/templates/conditional.yaml","label_status":"pending_human_review","expected":{}},
+    {"id":"injection","group":"rds","split":"test","template":"evaluation/templates/injection.yaml","label_status":"pending_human_review","expected":{"full":[["Database","ORG-RDS-ENCRYPTION"]]}},
+    {"id":"cross-resource","group":"iam","split":"test","template":"evaluation/templates/cross-resource.yaml","label_status":"pending_human_review","expected":{}}
+  ]
+}

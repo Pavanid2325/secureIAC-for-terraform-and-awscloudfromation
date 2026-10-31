@@ -17,12 +17,19 @@ class RetrievalAgent:
         self.embedder = embedder
         self.vector_store = vector_store
         self.top_k = top_k
+        if top_k <= 0:
+            raise ValueError("top_k must be positive")
 
     def retrieve(self, template_summary: TemplateSummary) -> list[RetrievalResult]:
         results: list[RetrievalResult] = []
         for descriptor in build_resource_descriptors(template_summary):
             query_embedding = self.embedder.embed_text(descriptor.query)
-            matches = self.vector_store.similarity_search(query_embedding, self.top_k)
+            if hasattr(self.vector_store, "configure"):
+                self.vector_store.configure(getattr(self.embedder, "model_id", type(self.embedder).__name__), len(query_embedding))
+            if hasattr(self.vector_store, "hybrid_search"):
+                matches = self.vector_store.hybrid_search(descriptor.query, query_embedding, self.top_k, descriptor.resource_type)
+            else:
+                matches = self.vector_store.similarity_search(query_embedding, self.top_k)
             seen: set[str] = set()
             contexts: list[RetrievalContext] = []
             for match in matches:

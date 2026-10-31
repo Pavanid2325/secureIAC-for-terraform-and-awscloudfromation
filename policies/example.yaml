@@ -1,0 +1,44 @@
+version: 1
+policies:
+  - id: ORG-RDS-ENCRYPTION
+    description: Production databases must explicitly enable encryption.
+    type: encryption
+    resource_types: ["AWS::RDS::DBInstance"]
+    environments: [production]
+    severity: HIGH
+    parameters: {path: /Properties/StorageEncrypted, equals: true}
+  - id: ORG-ADMIN-CIDR
+    description: Administrative TCP ingress must stay within approved example networks.
+    type: admin_cidrs
+    resource_types: ["AWS::EC2::SecurityGroup"]
+    environments: [production]
+    severity: HIGH
+    parameters: {ports: [22, 3389], allowed: ["10.0.0.0/8"]}
+  - id: ORG-TAGS
+    description: Resources must have an Owner tag.
+    type: required_tags
+    resource_types: ["AWS::S3::Bucket", "AWS::RDS::DBInstance"]
+    environments: [production]
+    severity: LOW
+    parameters: {tags: [Owner]}
+  - id: ORG-REGION
+    description: Explicit deployment region must be approved.
+    type: approved_regions
+    resource_types: ["*"]
+    environments: [production]
+    severity: HIGH
+    parameters: {allowed: [us-east-1, ap-south-1]}
+  - id: ORG-RDS-PUBLIC
+    description: Databases must explicitly disable public access.
+    type: public_access
+    resource_types: ["AWS::RDS::DBInstance"]
+    environments: [production]
+    severity: HIGH
+    parameters: {path: /Properties/PubliclyAccessible, equals: false}
+  - id: ORG-S3-LOGGING
+    description: Buckets must use the organization's example access-log destination.
+    type: logging
+    resource_types: ["AWS::S3::Bucket"]
+    environments: [production]
+    severity: MEDIUM
+    parameters: {path: /Properties/LoggingConfiguration/DestinationBucketName, equals: organization-access-logs}

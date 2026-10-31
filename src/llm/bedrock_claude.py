@@ -7,6 +7,7 @@ import logging
 import random
 import time
 from typing import Protocol
+from src.llm.base import LLMError, ProviderResult
 
 try:
     import boto3
@@ -15,14 +16,12 @@ try:
 except ImportError:  # pragma: no cover
     boto3 = None
     Config = None
-    BotoCoreError = Exception
-    ClientError = Exception
+    class BotoCoreError(Exception):
+        pass
+    class ClientError(BotoCoreError):
+        pass
 
 logger = logging.getLogger(__name__)
-
-
-class LLMError(RuntimeError):
-    """Raised when Claude cannot produce a usable response."""
 
 
 class LLMClient(Protocol):
@@ -55,12 +54,13 @@ class BedrockClaudeClient:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.max_retries = max_retries
-        config = Config(connect_timeout=timeout_seconds, read_timeout=timeout_seconds) if Config else None
+        config = Config(connect_timeout=timeout_seconds, read_timeout=timeout_seconds, retries={"total_max_attempts": 1}) if Config else None
         self.client = client or boto3.client(
             "bedrock-runtime", region_name=region_name, config=config
         )
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(self, system_prompt: str, user_prompt: str) -> ProviderResult:
+        started = time.perf_counter()
         body = json.dumps(
             {
                 "anthropic_version": "bedrock-2023-05-31",
@@ -79,6 +79,8 @@ class BedrockClaudeClient:
                     accept="application/json",
                 )
                 payload = json.loads(response["body"].read())
+                if payload.get("stop_reason") in {"max_tokens", "refusal"}:
+                    raise LLMError("incomplete")
                 blocks = payload.get("content", [])
                 text = "".join(
                     str(block.get("text", ""))
@@ -88,11 +90,13 @@ class BedrockClaudeClient:
                 if not text:
                     raise LLMError("Claude response did not contain text")
                 logger.info("Claude request completed model_id=%s", self.model_id)
-                return text
+                return ProviderResult(text, "bedrock", payload.get("model", self.model_id),
+                    response.get("ResponseMetadata", {}).get("RequestId"), payload.get("usage", {}),
+                    duration_ms=round((time.perf_counter() - started) * 1000))
             except (BotoCoreError, ClientError) as exc:
                 if attempt >= self.max_retries or not _is_retryable(exc):
                     logger.error("Claude request failed model_id=%s error_type=%s", self.model_id, type(exc).__name__)
-                    raise LLMError("Claude request failed") from exc
+                    raise LLMError("bedrock_request_failed", _is_retryable(exc)) from None
                 logger.warning("Retrying transient Claude request model_id=%s attempt=%s", self.model_id, attempt + 1)
                 time.sleep(min(2**attempt + random.random(), 8))
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:

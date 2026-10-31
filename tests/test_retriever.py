@@ -40,6 +40,7 @@ def test_retrieval_deduplicates_results(tmp_path):
     )
     chunk = DocumentChunker().chunk(document)[0]
     vector = embedder.embed_text(chunk.text)
+    store.configure(embedder.model_id, len(vector), "test", "test", reindex=True)
     store.upsert_chunks([(chunk, vector), (chunk, vector)])
 
     parsed = CloudFormationParser().parse_text(

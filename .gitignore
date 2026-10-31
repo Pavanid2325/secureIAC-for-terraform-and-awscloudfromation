@@ -9,3 +9,5 @@ pytest-cache-files-*/
 reports/
 vector_store.json
 *.egg-info/
+*.docx
+*.pptx

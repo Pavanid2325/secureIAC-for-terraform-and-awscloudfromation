@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,24 @@ INTRINSIC_TAGS = {
 class CloudFormationLoader(yaml.SafeLoader):
     """YAML loader that preserves CloudFormation short-form intrinsics."""
 
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent):
+            raise CloudFormationParseError("YAML aliases are not supported")
+        self._node_count = getattr(self, "_node_count", 0) + 1
+        self._depth = getattr(self, "_depth", 0) + 1
+        if self._node_count > 50_000 or self._depth > 64:
+            raise CloudFormationParseError("Template complexity limit exceeded")
+        try:
+            return super().compose_node(parent, index)
+        finally:
+            self._depth -= 1
+
+    def construct_mapping(self, node, deep=False):
+        keys = [self.construct_object(key, deep=deep) for key, _ in node.value]
+        if any(not isinstance(k, str) for k in keys) or len(keys) != len(set(keys)):
+            raise CloudFormationParseError("Mapping keys must be unique strings")
+        return super().construct_mapping(node, deep=deep)
+
 
 def _intrinsic_constructor(loader: CloudFormationLoader, node: yaml.Node) -> dict[str, Any]:
     key = INTRINSIC_TAGS[node.tag]
@@ -56,6 +75,9 @@ def _intrinsic_constructor(loader: CloudFormationLoader, node: yaml.Node) -> dic
 
 for tag in INTRINSIC_TAGS:
     CloudFormationLoader.add_constructor(tag, _intrinsic_constructor)
+
+# CloudFormation scalar dates are data strings, not Python datetime objects.
+CloudFormationLoader.add_constructor("tag:yaml.org,2002:timestamp", lambda loader, node: loader.construct_scalar(node))
 
 
 class CloudFormationParser:
@@ -96,6 +118,7 @@ class CloudFormationParser:
             raw = {}
         if not isinstance(raw, dict):
             raise CloudFormationParseError("CloudFormation template root must be a mapping/object")
+        _validate_tree(raw)
 
         resources = extract_resources(raw)
         return ParsedTemplate(
@@ -116,9 +139,38 @@ class CloudFormationParser:
     def _load(self, text: str, suffix: str, source: str) -> dict[str, Any]:
         try:
             if suffix == ".json":
-                return json.loads(text)
+                return json.loads(text, object_pairs_hook=_unique_object)
             return yaml.load(text, Loader=CloudFormationLoader)
         except json.JSONDecodeError as exc:
             raise CloudFormationParseError(f"Malformed JSON in {source}: {exc}") from exc
         except yaml.YAMLError as exc:
             raise CloudFormationParseError(f"Malformed YAML in {source}: {exc}") from exc
+        except RecursionError as exc:
+            raise CloudFormationParseError("Template complexity limit exceeded") from exc
+
+
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise CloudFormationParseError("Duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def _validate_tree(raw):
+    stack = [(raw, 0)]
+    nodes = 0
+    while stack:
+        value, depth = stack.pop()
+        nodes += 1
+        if nodes > 50_000 or depth > 64:
+            raise CloudFormationParseError("Template complexity limit exceeded")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise CloudFormationParseError("Non-finite numbers are not supported")
+        if isinstance(value, dict):
+            if any(not isinstance(k, str) for k in value):
+                raise CloudFormationParseError("Mapping keys must be strings")
+            stack.extend((v, depth+1) for v in value.values())
+        elif isinstance(value, list):
+            stack.extend((v, depth+1) for v in value)
